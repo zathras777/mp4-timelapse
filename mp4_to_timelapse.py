@@ -11,6 +11,7 @@
 from __future__ import print_function
 
 import os
+import fnmatch
 import sys
 import subprocess
 import argparse
@@ -25,6 +26,18 @@ if sys.version_info >= (3, 0):
 else:
     def do_iter(x):
         return x.iteritems()
+
+
+def find_related(base_fn):
+    where = os.path.dirname(base_fn)
+    base, ext = os.path.splitext(os.path.basename(base_fn))
+    files = [base_fn]
+    if base.startswith('GOPR'):
+        pattern = 'GP[0-9][0-9]' + base[4:] + ext
+        for f in os.listdir(where):
+            if fnmatch.fnmatch(f, pattern):
+                files.append(os.path.join(where, f))
+    return sorted(files)
 
 
 class TimelapseConversion(object):
@@ -65,7 +78,7 @@ class TimelapseConversion(object):
         cmd.insert(2, inpfn)
         cmd.append('%s/tmp_%%06d.png' % output_dir)
 
-        print("Processing {0} with temp directory {1}".format(inpfn, output_dir))
+        print("    Processing {0}\n        using temp directory {1}".format(os.path.basename(inpfn), output_dir))
 
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = proc.communicate()
@@ -114,10 +127,15 @@ if __name__ == '__main__':
     parser.add_argument('--size', help='size of images and final movie')
 
     args = parser.parse_args()
-    print(args)
+
+    video_list = find_related(args.videos[0]) if len(args.videos) == 1 else args.videos
+
+    print("Total of {0} file(s) to process.\n".format(len(video_list)))
+
     tc = TimelapseConversion(args.interval)
     if args.size:
         tc.set_size(args.size)
-    for fn in args.videos:
+    for fn in video_list:
         tc.extract_images(fn)
     tc.build_movie(args.output)
+
