@@ -42,16 +42,17 @@ def find_related(base_fn):
 
 class TimelapseConversion(object):
     FFMPEG = "/usr/local/bin/ffmpeg"
-    def __init__(self, interval = 2):
+    def __init__(self, interval = 2, framerate=25):
         self.interval = interval
         self.tmpdir = mkdtemp()
         self.seq = 0
-        self.size = '1280x960'
+        self.size = None
+        self.framerate = framerate
 
         self.options = {
             'f': 'image2',
             'vf': 'fps=fps=1/%d' % interval,
-            's': self.size}
+        }
 
     def set_size(self, sz):
         if not 'x' in sz:
@@ -63,6 +64,8 @@ class TimelapseConversion(object):
     def _make_command(self):
         cmd = [self.FFMPEG, '-an']
         for k,v in do_iter(self.options):
+            if type(v) == int:
+                v = str(v)
             cmd.extend(['-%s' % k, v])
         return cmd
 
@@ -79,7 +82,6 @@ class TimelapseConversion(object):
         cmd.append('%s/tmp_%%06d.png' % output_dir)
 
         print("    Processing {0}\n        using temp directory {1}".format(os.path.basename(inpfn), output_dir))
-
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = proc.communicate()
         if proc.returncode != 0:
@@ -97,12 +99,13 @@ class TimelapseConversion(object):
             print("No images to make into movie.")
             return False
 
-        print("\nCreating movie from {0} images...\n".format(self.seq))
+        print("\nCreating movie from {0} images in {1}...\n".format(self.seq, self.tmpdir))
 
         moviefn = '%s/timelapse.mp4' % self.tmpdir if outputfn is None else outputfn
-        cmd = [self.FFMPEG, '-i', '%s/seq_%%06d.png' % self.tmpdir,
+        cmd = [self.FFMPEG, 
+               '-i', '%s/seq_%%06d.png' % self.tmpdir,
                '-c:v', 'libx264',
-               '-r', '30',
+               '-r', str(self.framerate),
                '-pix_fmt', 'yuv420p',
                moviefn]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -125,15 +128,15 @@ if __name__ == '__main__':
     parser.add_argument('--interval', type=int, metavar='SECONDS', default="2", help='timelapse interval [default=2]')
     parser.add_argument('--output', help='final movie filename')
     parser.add_argument('--size', help='size of images and final movie')
-
+    parser.add_argument('--no-resize', action='store_true', help="don't resize images")
+    parser.add_argument('--framerate', default=25, help='framerate for final output')
     args = parser.parse_args()
 
     video_list = find_related(args.videos[0]) if len(args.videos) == 1 else args.videos
 
     print("Total of {0} file(s) to process.\n".format(len(video_list)))
-
-    tc = TimelapseConversion(args.interval)
-    if args.size:
+    tc = TimelapseConversion(args.interval, args.framerate)
+    if not args.no_resize and args.size:
         tc.set_size(args.size)
     for fn in video_list:
         tc.extract_images(fn)
